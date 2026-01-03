@@ -1,0 +1,131 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent Hub PRO - Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap');
+        
+        :root {
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.4);
+            --bg: #030303;
+        }
+
+        body {
+            background: var(--bg);
+            color: #e2e8f0;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            overflow: hidden;
+        }
+
+        .eternity-card {
+            background: rgba(10, 10, 10, 0.6);
+            backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+        }
+
+        .moving-glow {
+            background: linear-gradient(
+                to right, 
+                #ffffff 20%, 
+                #818cf8 40%, 
+                #c084fc 60%, 
+                #ffffff 80%
+            );
+            background-size: 200% auto;
+            color: #000;
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 5s linear infinite;
+        }
+
+        @keyframes shine {
+            to { background-position: 200% center; }
+        }
+
+        .avatar-frame {
+            position: relative;
+            padding: 4px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.5) 0%, rgba(192,132,252,0.5) 100%);
+            border-radius: 50%;
+            transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        .avatar-frame img {
+            border-radius: 50%;
+            object-fit: cover;
+            aspect-ratio: 1/1;
+            filter: contrast(1.1) brightness(1.05);
+        }
+
+        .lamp-float {
+            animation: floating 4s ease-in-out infinite;
+            filter: drop-shadow(0 0 25px rgba(99, 102, 241, 0.7));
+            cursor: pointer;
+        }
+
+        @keyframes floating {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-20px) scale(1.05); }
+        }
+
+        .magic-smoke {
+            position: absolute;
+            inset: -50%;
+            background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 60%);
+            filter: blur(40px);
+            z-index: 0;
+            pointer-events: none;
+            animation: rotateSmoke 20s linear infinite;
+        }
+
+        @keyframes rotateSmoke {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* Custom Input */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            height: 4px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #6366f1;
+            margin-top: -7px;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.6);
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>

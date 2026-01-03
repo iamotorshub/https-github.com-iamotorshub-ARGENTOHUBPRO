@@ -1,0 +1,7 @@
+{
+  "name": "AI ARGENTOHUB PRO",
+  "description": "Una aplicación de voz interactiva que utiliza Gemini 2.5 Live API para conversar con un pibe de 25 años con un acento argentino rioplatense bien marcado.y tiene opcion para crear voces nuevas en argentino",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
