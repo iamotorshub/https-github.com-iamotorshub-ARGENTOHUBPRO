@@ -4,6 +4,13 @@ import { ConnectionStatus, Agent, ChatMessage, Scene, KnowledgeItem, ConnectorCo
 import { decode, decodeAudioData, createPcmBlob, pcmToWav } from './services/audioUtils';
 import Visualizer from './components/Visualizer';
 
+/**
+ * 🚨 MIGRATION NOTICE 🚨
+ * If you are reading this code to migrate it to GENTHUB (Production),
+ * STOP immediately and read `MIGRATION_BIBLE.md`.
+ * It contains the strict "Aesthetic Takeover" protocol and the architectural split guide.
+ */
+
 // --- COMPONENTE TYPEWRITER ---
 const Typewriter = ({ text, speed = 100, delay = 0 }: { text: string, speed?: number, delay?: number }) => {
   const [displayText, setDisplayText] = useState('');
@@ -695,7 +702,7 @@ const App: React.FC = () => {
                 <h1 className="text-2xl font-black tracking-tighter italic bg-clip-text text-transparent bg-gradient-to-r from-white to-indigo-400">
                     ARGENTO<span className="text-indigo-500">HUB</span> PRO
                 </h1>
-                <span className="px-2 py-1 rounded bg-indigo-500/20 border border-indigo-500/30 text-[10px] uppercase font-bold tracking-widest text-indigo-300">V14.5</span>
+                <span className="px-2 py-1 rounded bg-indigo-500/20 border border-indigo-500/30 text-[10px] uppercase font-bold tracking-widest text-indigo-300">V14.5 (RELEASE)</span>
             </div>
             
             <div className="pointer-events-auto gaussian-glass rounded-full p-1 flex gap-1">
