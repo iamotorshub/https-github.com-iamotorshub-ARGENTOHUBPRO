@@ -1,131 +1,286 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Agent Hub PRO - Studio</title>
+    <title>AI ArgentoHub PRO - Advanced Agent Engineering</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@200;400;600;800&display=swap');
         
         :root {
-            --primary: #6366f1;
-            --primary-glow: rgba(99, 102, 241, 0.4);
-            --bg: #030303;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.4);
+            --bg-dark: #020202;
+            --mouse-x: 50%;
+            --mouse-y: 50%;
         }
 
         body {
-            background: var(--bg);
-            color: #e2e8f0;
-            min-height: 100vh;
-            margin: 0;
+            background: var(--bg-dark);
+            color: #f8fafc;
             font-family: 'Plus Jakarta Sans', sans-serif;
             overflow: hidden;
+            margin: 0;
+            perspective: 1000px;
         }
 
-        .eternity-card {
-            background: rgba(10, 10, 10, 0.6);
-            backdrop-filter: blur(20px) saturate(180%);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+        /* Cinematic Background Layers */
+        .video-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 110%;
+            height: 110%;
+            object-fit: cover;
+            z-index: -3;
+            filter: brightness(0.25) saturate(1.4) contrast(1.1);
+            transform: translate(calc(var(--mouse-x) * -0.02), calc(var(--mouse-y) * -0.02));
+            transition: transform 0.1s ease-out;
+        }
+
+        .overlay-vignette {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at var(--mouse-x) var(--mouse-y), transparent 0%, rgba(0,0,0,0.85) 100%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Advanced Gaussian Glassmorphism */
+        .gaussian-glass {
+            background: rgba(8, 8, 12, 0.35);
+            backdrop-filter: blur(25px) saturate(210%);
+            -webkit-backdrop-filter: blur(25px) saturate(210%);
+            border: 1px solid rgba(255, 255, 255, 0.07);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
         }
 
-        .moving-glow {
-            background: linear-gradient(
-                to right, 
-                #ffffff 20%, 
-                #818cf8 40%, 
-                #c084fc 60%, 
-                #ffffff 80%
-            );
+        /* 1. Physics-Based Motion (Spring) */
+        .hover-spring {
+            transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .hover-spring:hover {
+            transform: scale(1.05);
+        }
+        .click-spring:active {
+            transform: scale(0.95);
+        }
+        
+        /* Floating Animation */
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+        }
+        .animate-float-delay {
+            animation: float 7s ease-in-out infinite 1s;
+        }
+        
+        /* Subtle Float for clickable elements */
+        @keyframes floatSubtle {
+            0% { transform: translateY(0px); box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.3); }
+            50% { transform: translateY(-5px); box-shadow: 0 20px 40px -10px rgba(99, 102, 241, 0.5); }
+            100% { transform: translateY(0px); box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.3); }
+        }
+        .animate-float-subtle {
+            animation: floatSubtle 5s ease-in-out infinite;
+        }
+
+        /* Luxury Button Effects */
+        .btn-luxury {
+            background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 1;
+        }
+        .btn-luxury::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            z-index: -1;
+        }
+        .btn-luxury:hover::before {
+            opacity: 1;
+        }
+        .btn-luxury:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.1);
+            letter-spacing: 0.2em;
+        }
+        .btn-luxury::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -120%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, transparent, rgba(255,255,255,0.4), transparent);
+            transform: skewX(-20deg);
+            transition: none;
+        }
+        .btn-luxury:hover::after {
+            left: 120%;
+            transition: all 0.7s ease-in-out;
+        }
+
+        .btn-glass-luxury {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.5s ease;
+        }
+        .btn-glass-luxury:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .btn-glass-luxury::after {
+             content: '';
+            position: absolute;
+            top: 0;
+            left: -120%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);
+            transform: skewX(-20deg);
+            transition: none;
+        }
+        .btn-glass-luxury:hover::after {
+            left: 120%;
+            transition: all 0.6s ease-in-out;
+        }
+
+        /* Tunnel Zoom Effect */
+        @keyframes tunnelZoom {
+            0% { transform: scale(0.8) translateZ(-500px); opacity: 0; letter-spacing: 1em; }
+            100% { transform: scale(1) translateZ(0); opacity: 1; letter-spacing: normal; }
+        }
+        .animate-tunnel {
+            animation: tunnelZoom 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        }
+
+        /* 2. Staggered Reveals */
+        @keyframes slideInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .stagger-enter {
+            animation: slideInUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+            opacity: 0;
+        }
+        .stagger-delay-1 { animation-delay: 100ms; }
+        .stagger-delay-2 { animation-delay: 200ms; }
+        .stagger-delay-3 { animation-delay: 300ms; }
+        .stagger-delay-4 { animation-delay: 400ms; }
+        .stagger-delay-5 { animation-delay: 500ms; }
+
+        /* 3. Kinetic Typography */
+        .moving-glow-text {
+            background: linear-gradient(to right, #fff 20%, #818cf8 40%, #c084fc 60%, #fff 80%);
             background-size: 200% auto;
-            color: #000;
             background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            animation: shine 5s linear infinite;
+            animation: shine 8s linear infinite;
         }
+        @keyframes shine { to { background-position: 200% center; } }
 
-        @keyframes shine {
-            to { background-position: 200% center; }
-        }
-
-        .avatar-frame {
-            position: relative;
-            padding: 4px;
-            background: linear-gradient(135deg, rgba(99,102,241,0.5) 0%, rgba(192,132,252,0.5) 100%);
-            border-radius: 50%;
-            transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
-        }
-
-        .avatar-frame img {
-            border-radius: 50%;
-            object-fit: cover;
-            aspect-ratio: 1/1;
-            filter: contrast(1.1) brightness(1.05);
-        }
-
-        .lamp-float {
-            animation: floating 4s ease-in-out infinite;
-            filter: drop-shadow(0 0 25px rgba(99, 102, 241, 0.7));
-            cursor: pointer;
-        }
-
-        @keyframes floating {
-            0%, 100% { transform: translateY(0) scale(1); }
-            50% { transform: translateY(-20px) scale(1.05); }
-        }
-
-        .magic-smoke {
-            position: absolute;
-            inset: -50%;
-            background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 60%);
-            filter: blur(40px);
-            z-index: 0;
-            pointer-events: none;
-            animation: rotateSmoke 20s linear infinite;
-        }
-
-        @keyframes rotateSmoke {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+        /* 5. Depth & Parallax */
+        .tilt-card {
+            transform-style: preserve-3d;
+            transform: perspective(1000px) rotateX(0deg) rotateY(0deg);
+            transition: transform 0.1s ease-out;
         }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        
-        /* Custom Input */
-        input[type=range] {
-            -webkit-appearance: none;
-            background: transparent;
-        }
-        input[type=range]::-webkit-slider-runnable-track {
-            height: 4px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 10px;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 18px;
-            width: 18px;
+
+        .aladino-orb {
+            width: 70px;
+            height: 70px;
+            background: radial-gradient(circle at 30% 30%, #818cf8, #4338ca);
             border-radius: 50%;
-            background: #6366f1;
-            margin-top: -7px;
-            box-shadow: 0 0 15px rgba(99, 102, 241, 0.6);
+            box-shadow: 0 0 40px rgba(99, 102, 241, 0.5), inset 0 0 20px rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+            transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            animation: pulse-glow 3s infinite ease-in-out;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 30px rgba(99, 102, 241, 0.5), inset 0 0 15px rgba(255, 255, 255, 0.3); }
+            50% { box-shadow: 0 0 60px rgba(99, 102, 241, 0.8), inset 0 0 25px rgba(255, 255, 255, 0.5); transform: scale(1.05); }
+        }
+
+        .aladino-orb:hover {
+            transform: scale(1.15) rotate(15deg);
+            filter: brightness(1.2);
+        }
+        
+        /* Glass Blur Entrance */
+        @keyframes blurIn {
+            from { backdrop-filter: blur(0px); opacity: 0; }
+            to { backdrop-filter: blur(25px); opacity: 1; }
+        }
+        .animate-blur-in {
+            animation: blurIn 1s ease-out forwards;
         }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
-  }
-}
-</script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.0.0",
+        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+        "react/jsx-runtime": "https://esm.sh/react@19.0.0/jsx-runtime",
+        "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "react/": "https://esm.sh/react@^19.2.3/"
+      }
+    }
+    </script>
 </head>
 <body>
+    <video class="video-bg" autoplay muted loop playsinline>
+        <source src="https://assets.mixkit.co/videos/preview/mixkit-abstract-dark-and-blue-particles-background-1234-large.mp4" type="video/mp4">
+    </video>
+    <div class="overlay-vignette"></div>
     <div id="root"></div>
+    <script>
+        document.addEventListener('mousemove', (e) => {
+            const x = (e.clientX / window.innerWidth) * 100;
+            const y = (e.clientY / window.innerHeight) * 100;
+            document.documentElement.style.setProperty('--mouse-x', x + '%');
+            document.documentElement.style.setProperty('--mouse-y', y + '%');
+            
+            const cards = document.querySelectorAll('.tilt-card');
+            cards.forEach(card => {
+                const rect = card.getBoundingClientRect();
+                const cardX = rect.left + rect.width / 2;
+                const cardY = rect.top + rect.height / 2;
+                const mouseX = e.clientX;
+                const mouseY = e.clientY;
+                const rotateX = ((mouseY - cardY) / 20) * -1;
+                const rotateY = (mouseX - cardX) / 20;
+                // Only apply if hover
+                if (Math.abs(mouseX - cardX) < rect.width && Math.abs(mouseY - cardY) < rect.height) {
+                    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                } else {
+                    card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg)`;
+                }
+            });
+        });
+    </script>
 </body>
 </html>
