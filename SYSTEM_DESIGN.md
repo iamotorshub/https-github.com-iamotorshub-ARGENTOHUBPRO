@@ -1,5 +1,7 @@
 # ARGENTO HUB PRO V14 - FRONTE-END SYSTEM DESIGN & INTEGRATION SPEC
 
+> 🚨 **MIGRATION NOTICE:** If you are migrating this project to the production environment (GentHub), please refer to **`MIGRATION_BIBLE.md`**. It contains the specific prompts, architectural changes, and aesthetic rules required for the transplant.
+
 ## 1. VISION & ARCHITECTURE
 ArgentoHub is designed as a **"Cinematic Neural Interface"**. Unlike traditional SaaS dashboards (flat, white, grid-based), this system mimics high-end sci-fi interfaces (think Jarvis, Minority Report) but built with web technologies.
 

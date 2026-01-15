@@ -44,6 +44,7 @@ FASE 2: LA COLUMNA VERTEBRAL (TYPES)
 
 FASE 3: REFRACTORIZACIÓN DE COMPONENTES (DE MONOLITO A MODULAR)
 El archivo `App.tsx` actual es gigante. Rómpelo en:
+- `components/argentohub/ArgentoLayout.tsx` (Nav, Video BG)
 - `components/argentohub/HeroSection.tsx` (La vista 'home')
 - `components/argentohub/TemplateGallery.tsx` (La vista 'templates' estilo Apple)
 - `components/argentohub/StudioEditor.tsx` (La vista 'studio' con sus tabs)
