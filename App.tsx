@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { ConnectionStatus, Agent, ChatMessage, Scene, KnowledgeItem, ConnectorConfig, ExportConfig, VoiceSettings, DialogueSession, DialogueLine, AladinoMessage, AladinoAttachment, ElevenLabsVoice } from './types';
 import { decode, decodeAudioData, createPcmBlob, pcmToWav } from './services/audioUtils';
+import { synthesizeArgentineSpeech } from './services/googleCloudTts'; // IMPORTADO NUEVO SERVICIO
 import Visualizer from './components/Visualizer';
 
 /**
@@ -16,7 +17,9 @@ const Typewriter = ({ text, speed = 100, delay = 0 }: { text: string, speed?: nu
   const [displayText, setDisplayText] = useState('');
   
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    setDisplayText(''); // Reset on text change
+    
     const startTyping = () => {
       let i = 0;
       const timer = setInterval(() => {
@@ -38,7 +41,6 @@ const Typewriter = ({ text, speed = 100, delay = 0 }: { text: string, speed?: nu
 
     return () => {
       clearTimeout(timeoutId);
-      setDisplayText('');
     };
   }, [text, speed, delay]);
 
@@ -387,9 +389,10 @@ const App: React.FC = () => {
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Test Lab State
-  const [testInput, setTestInput] = useState('');
+  const [testInput, setTestInput] = useState('Hola, soy tu asistente virtual. ¿En qué te puedo ayudar hoy?');
   const [isTestThinking, setIsTestThinking] = useState(false);
-  const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
+  const [testLabAgentId, setTestLabAgentId] = useState<string>(''); // For Voice Lab
+  const [tempVoiceSettings, setTempVoiceSettings] = useState<VoiceSettings | null>(null);
 
   // Aladino State
   const [aladinoMessages, setAladinoMessages] = useState<AladinoMessage[]>([]);
@@ -397,7 +400,8 @@ const App: React.FC = () => {
   const [aladinoAttachments, setAladinoAttachments] = useState<AladinoAttachment[]>([]);
   const [isAladinoListening, setIsAladinoListening] = useState(false);
   const [isAladinoProcessing, setIsAladinoProcessing] = useState(false);
-  
+  const [aladinoActiveAgentId, setAladinoActiveAgentId] = useState<string>(''); 
+
   // Dialogue State
   const [dialogueAgentA, setDialogueAgentA] = useState<string>('');
   const [dialogueAgentB, setDialogueAgentB] = useState<string>('');
@@ -405,6 +409,14 @@ const App: React.FC = () => {
   const [generatedScript, setGeneratedScript] = useState<DialogueLine[]>([]);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
+
+  // GLOBAL OMNI-TESTER WIDGET STATE
+  const [isGlobalChatOpen, setIsGlobalChatOpen] = useState(false);
+  const [globalChatAgentId, setGlobalChatAgentId] = useState<string>(agents[0].id);
+  const [globalChatInput, setGlobalChatInput] = useState('');
+  const [globalChatHistory, setGlobalChatHistory] = useState<{role: 'user'|'model', text: string}[]>([]);
+  const [isGlobalChatListening, setIsGlobalChatListening] = useState(false);
+  const [isGlobalChatSpeaking, setIsGlobalChatSpeaking] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('hub_agents_v14_master', JSON.stringify(agents));
@@ -482,27 +494,40 @@ const App: React.FC = () => {
     addNotification("Agente guardado en Base de Datos", "success");
   };
 
-  const generateAudioForText = async (text: string, agent: Agent) => {
+  const generateAudioForText = async (text: string, agent: Agent, overrideSettings?: VoiceSettings) => {
+     const settings = overrideSettings || agent.voiceSettings;
      try {
-          // Check for ElevenLabs
-          if (agent.voiceSettings.provider === 'elevenlabs' && agent.voiceSettings.elevenLabsVoiceId && agent.voiceSettings.elevenLabsApiKey) {
+          // 1. Check for ElevenLabs
+          if (settings.provider === 'elevenlabs' && settings.elevenLabsVoiceId && settings.elevenLabsApiKey) {
                addNotification(`Generando con ElevenLabs (${agent.name})...`, "info");
-               // Mock fetch to ElevenLabs
                await new Promise(r => setTimeout(r, 1000)); 
-               // In a real app, you would fetch https://api.elevenlabs.io/v1/text-to-speech/{voice_id}
-               // Since we can't do that securely client-side without proxy, we simulate or fallback.
                addNotification("ElevenLabs API Call Simulated (Requires Backend)", "success");
                return null; 
           }
 
-          // Gemini Logic
+          // 2. CHECK FOR GOOGLE CLOUD TTS (ARGENTINE PRESETS)
+          if (settings.argentinaPreset) {
+              addNotification(`Generando con Cloud TTS Neural Argentina (${agent.name})...`, "info");
+              const audioUrl = await synthesizeArgentineSpeech(
+                  text, 
+                  agent.gender, 
+                  settings.speed, 
+                  // Mapeo simple de pitch
+                  settings.pitch === 'Grave' ? -4.0 : settings.pitch === 'Agudo' ? 4.0 : 0.0
+              );
+              
+              if (audioUrl) return audioUrl;
+              addNotification("Fallo Cloud TTS, probando Gemini...", "error");
+          }
+
+          // 3. Fallback: Gemini GenAI SDK
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           let prompt = `Decí: "${text}".`;
-          const preset = ARGENTINE_PRESETS.find(p => p.id === agent.voiceSettings.argentinaPreset);
+          const preset = ARGENTINE_PRESETS.find(p => p.id === settings.argentinaPreset);
           if (preset) {
              prompt = `Habla como un argentino (${preset.name}). Tono: ${preset.style}. Texto: "${text}". NO uses 'che' en exceso, sé natural.`;
-          } else if (agent.voiceSettings.accentLevel > 20) {
-              prompt = `Con acento argentino rioplatense marcado (${agent.voiceSettings.accentLevel}% intensidad) decí: "${text}".`;
+          } else if (settings.accentLevel > 20) {
+              prompt = `Con acento argentino rioplatense marcado (${settings.accentLevel}% intensidad) decí: "${text}".`;
           }
 
           const response = await ai.models.generateContent({
@@ -527,22 +552,6 @@ const App: React.FC = () => {
       }
   };
 
-  const testAgentVoice = async () => {
-      if(!testInput.trim()) return;
-      setIsTestThinking(true);
-      const targetAgent = editingAgent || currentAgent;
-      
-      const audioUrl = await generateAudioForText(testInput, targetAgent);
-      
-      if (audioUrl) {
-          const audio = new Audio(audioUrl);
-          audio.play();
-      } else {
-          addNotification("Error generando audio", "error");
-      }
-      setIsTestThinking(false);
-  };
-
   const handleMagicWand = async () => {
     if (!editingAgent || !magicPromptInput.trim()) return;
     addNotification("Generando identidad...", "info");
@@ -557,7 +566,6 @@ const App: React.FC = () => {
     }
   };
 
-  // ElevenLabs Logic
   const fetchElevenLabsVoices = async (apiKey: string) => {
       if(!apiKey) {
           addNotification("Por favor, ingresa tu API Key primero.", "error");
@@ -619,16 +627,19 @@ const App: React.FC = () => {
   const generateLineAudio = async (line: DialogueLine) => {
       const agent = agents.find(a => a.id === line.agentId);
       if (!agent) return;
-      
-      // Update line status
       setGeneratedScript(prev => prev.map(l => l.id === line.id ? { ...l, isGenerating: true } : l));
-      
       const url = await generateAudioForText(line.text, agent);
-      
       if (url) {
-           setGeneratedScript(prev => prev.map(l => l.id === line.id ? { ...l, audioUrl: url, isGenerating: false } : l));
-           const audio = new Audio(url);
-           audio.play();
+           const tempAudio = new Audio(url);
+           tempAudio.onloadedmetadata = () => {
+               setGeneratedScript(prev => prev.map(l => l.id === line.id ? { 
+                   ...l, 
+                   audioUrl: url, 
+                   isGenerating: false,
+                   duration: tempAudio.duration
+               } : l));
+               tempAudio.play();
+           };
       } else {
            setGeneratedScript(prev => prev.map(l => l.id === line.id ? { ...l, isGenerating: false } : l));
            addNotification("Error audio", "error");
@@ -644,29 +655,46 @@ const App: React.FC = () => {
       document.body.removeChild(a);
   };
 
-  // Aladino Handlers
+  const exportConversation = async () => {
+      if (generatedScript.length === 0) return;
+      addNotification("Exportando Mix...", "info");
+      const transcript = generatedScript.map(l => `[${l.agentName}]: ${l.text}`).join('\n\n');
+      const blob = new Blob([transcript], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      downloadAudio(url, `CONVERSATION_MIX_${Date.now()}.txt`);
+      const lastAudio = generatedScript.find(l => l.audioUrl)?.audioUrl;
+      if(lastAudio) downloadAudio(lastAudio, 'last_generated_clip.wav');
+      addNotification("Script exportado exitosamente", "success");
+  };
+
+  const swapLineAgent = (line: DialogueLine) => {
+      const otherId = line.agentId === dialogueAgentA ? dialogueAgentB : dialogueAgentA;
+      const otherAgent = agents.find(a => a.id === otherId);
+      if (otherAgent) {
+          setGeneratedScript(prev => prev.map(l => l.id === line.id ? { 
+              ...l, 
+              agentId: otherId, 
+              agentName: otherAgent.name,
+              audioUrl: undefined, // Clear audio as voice changed
+              duration: undefined
+          } : l));
+      }
+  };
+
   const handleAladinoSubmit = async () => {
       if ((!aladinoInput.trim() && aladinoAttachments.length === 0) || isAladinoProcessing) return;
-
-      const newUserMsg: AladinoMessage = {
-          id: Date.now().toString(),
-          role: 'user',
-          text: aladinoInput,
-          attachments: [...aladinoAttachments],
-          timestamp: Date.now()
-      };
-
+      const newUserMsg: AladinoMessage = { id: Date.now().toString(), role: 'user', text: aladinoInput, attachments: [...aladinoAttachments], timestamp: Date.now() };
       setAladinoMessages(prev => [...prev, newUserMsg]);
       setAladinoInput('');
       setAladinoAttachments([]);
       setIsAladinoProcessing(true);
-
-      // Simulate Thinking / API Call
+      const activeAgent = agents.find(a => a.id === aladinoActiveAgentId);
       setTimeout(() => {
           const newModelMsg: AladinoMessage = {
               id: (Date.now() + 1).toString(),
               role: 'model',
-              text: `He analizado tu solicitud. ${newUserMsg.attachments?.length ? `He procesado ${newUserMsg.attachments.length} archivo(s).` : ''} Aquí tienes mi análisis Omni-Modal basado en el contexto proporcionado.`,
+              agentId: aladinoActiveAgentId || undefined,
+              text: activeAgent ? `[Modo: ${activeAgent.name}] ${activeAgent.instruction.slice(0, 50)}... Entendido. Basado en mi perfil de ${activeAgent.occupation}, aquí tienes mi análisis:\n\nHe analizado tu solicitud. ${newUserMsg.attachments?.length ? `He procesado ${newUserMsg.attachments.length} archivo(s).` : ''}` : `He analizado tu solicitud. ${newUserMsg.attachments?.length ? `He procesado ${newUserMsg.attachments.length} archivo(s).` : ''} Aquí tienes mi análisis Omni-Modal basado en el contexto proporcionado.`,
               timestamp: Date.now()
           };
           setAladinoMessages(prev => [...prev, newModelMsg]);
@@ -676,21 +704,62 @@ const App: React.FC = () => {
 
   const handleAladinoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files) {
-          Array.from(e.target.files).forEach(file => {
+          Array.from(e.target.files).forEach((file: File) => {
               const reader = new FileReader();
               reader.onload = (ev) => {
                   const result = ev.target?.result as string;
                   const type = file.type.includes('image') ? 'image' : file.type.includes('pdf') ? 'pdf' : file.type.includes('csv') ? 'csv' : 'other';
-                  setAladinoAttachments(prev => [...prev, {
-                      id: Date.now() + Math.random().toString(),
-                      name: file.name,
-                      type,
-                      dataUrl: result
-                  }]);
+                  setAladinoAttachments(prev => [...prev, { id: Date.now() + Math.random().toString(), name: file.name, type, dataUrl: result }]);
               };
               reader.readAsDataURL(file);
           });
       }
+  };
+
+  // --- NEW FEATURES LOGIC ---
+  const handleTestLabPreview = async () => {
+      if(!testInput || !testLabAgentId) return;
+      const agent = agents.find(a => a.id === testLabAgentId);
+      if(!agent) return;
+      
+      // Use temp settings if available, otherwise agent settings
+      const settingsToUse = tempVoiceSettings || agent.voiceSettings;
+      const mockAgentWithTempSettings = { ...agent, voiceSettings: settingsToUse };
+
+      setIsTestThinking(true);
+      const audioUrl = await generateAudioForText(testInput, mockAgentWithTempSettings);
+      if(audioUrl) {
+          const a = new Audio(audioUrl);
+          a.play();
+      }
+      setIsTestThinking(false);
+  };
+
+  const handleGlobalChatSubmit = async () => {
+      if(!globalChatInput.trim()) return;
+      const currentInput = globalChatInput;
+      setGlobalChatInput('');
+      setGlobalChatHistory(prev => [...prev, { role: 'user', text: currentInput }]);
+      setIsGlobalChatSpeaking(true);
+
+      const agent = agents.find(a => a.id === globalChatAgentId);
+      if(!agent) return;
+
+      // Simulate network
+      setTimeout(async () => {
+           const responseText = `Hola, soy ${agent.name}. Entendí que dijiste: "${currentInput}". Como experto en ${agent.category}, te respondo con mi voz configurada.`;
+           setGlobalChatHistory(prev => [...prev, { role: 'model', text: responseText }]);
+           
+           // Generate Audio Response
+           const audioUrl = await generateAudioForText(responseText, agent);
+           if(audioUrl) {
+               const a = new Audio(audioUrl);
+               a.play();
+               a.onended = () => setIsGlobalChatSpeaking(false);
+           } else {
+               setIsGlobalChatSpeaking(false);
+           }
+      }, 1000);
   };
 
   return (
@@ -730,6 +799,75 @@ const App: React.FC = () => {
                     <span className="text-sm font-medium">{n.msg}</span>
                 </div>
             ))}
+        </div>
+
+        {/* GLOBAL OMNI-TESTER WIDGET */}
+        <div className={`fixed bottom-8 right-8 z-[100] transition-all duration-500 ${isGlobalChatOpen ? 'w-96 h-[500px]' : 'w-16 h-16'} gaussian-glass rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden`}>
+            {isGlobalChatOpen ? (
+                <>
+                    <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/40">
+                         <div className="flex items-center gap-2">
+                             <span className="text-xl">🎙️</span>
+                             <span className="text-xs font-bold uppercase tracking-widest text-indigo-300">Omni-Tester</span>
+                         </div>
+                         <button onClick={() => setIsGlobalChatOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                    </div>
+                    
+                    {/* Agent Selector in Header */}
+                    <div className="px-4 py-2 bg-black/20">
+                         <select 
+                            value={globalChatAgentId}
+                            onChange={(e) => setGlobalChatAgentId(e.target.value)}
+                            className="w-full bg-transparent text-xs font-bold outline-none text-slate-300"
+                         >
+                            {agents.map(a => <option key={a.id} value={a.id}>🤖 {a.name}</option>)}
+                         </select>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/20 scrollbar-thin">
+                         {globalChatHistory.length === 0 && (
+                             <div className="text-center text-[10px] text-slate-500 mt-10">Prueba la voz y personalidad de este agente.</div>
+                         )}
+                         {globalChatHistory.map((msg, i) => (
+                             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                 <div className={`max-w-[80%] p-2 rounded-xl text-xs ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-200'}`}>
+                                     {msg.text}
+                                 </div>
+                             </div>
+                         ))}
+                         {isGlobalChatSpeaking && <div className="text-[10px] text-indigo-400 animate-pulse">🔊 Reproduciendo respuesta...</div>}
+                    </div>
+
+                    <div className="p-3 bg-black/40 border-t border-white/10 flex gap-2">
+                        <button 
+                            onClick={() => {
+                                setIsGlobalChatListening(!isGlobalChatListening);
+                                if(!isGlobalChatListening) {
+                                    setTimeout(() => {
+                                        setGlobalChatInput("Hola, ¿cómo estás?"); // Simulate voice input
+                                        setIsGlobalChatListening(false);
+                                    }, 1500);
+                                }
+                            }}
+                            className={`p-2 rounded-full transition-colors ${isGlobalChatListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
+                        >
+                            🎤
+                        </button>
+                        <input 
+                            value={globalChatInput}
+                            onChange={e => setGlobalChatInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleGlobalChatSubmit()}
+                            placeholder={isGlobalChatListening ? "Escuchando..." : "Escribe..."}
+                            className="flex-1 bg-transparent text-xs outline-none"
+                        />
+                        <button onClick={handleGlobalChatSubmit} className="text-indigo-400 font-bold hover:text-indigo-300">➤</button>
+                    </div>
+                </>
+            ) : (
+                <button onClick={() => setIsGlobalChatOpen(true)} className="w-full h-full flex items-center justify-center text-2xl hover:scale-110 transition-transform bg-indigo-600 rounded-full shadow-[0_0_20px_rgba(99,102,241,0.5)]">
+                    🎙️
+                </button>
+            )}
         </div>
 
         <main className="pt-24 px-6 h-screen flex flex-col items-center justify-center relative z-10">
@@ -779,6 +917,138 @@ const App: React.FC = () => {
                 </div>
             )}
 
+            {/* --- VOICE LAB VIEW (NEW) --- */}
+            {activeView === 'test_lab' && (
+                <div className="w-full max-w-6xl h-[85vh] flex flex-col gap-6 stagger-enter">
+                    <div className="flex justify-between items-end mb-4">
+                         <div>
+                             <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white">Voice Lab <span className="text-indigo-500">Pro</span></h2>
+                             <p className="text-slate-400 text-sm">Laboratorio de síntesis y calibración de acentos.</p>
+                         </div>
+                    </div>
+
+                    <div className="flex-1 flex gap-8">
+                        {/* Control Panel */}
+                        <div className="w-1/3 gaussian-glass rounded-[2rem] p-8 border border-white/5 space-y-8">
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-indigo-400 mb-2 block">Agente Base</label>
+                                <select 
+                                    value={testLabAgentId} 
+                                    onChange={(e) => {
+                                        setTestLabAgentId(e.target.value);
+                                        const ag = agents.find(a => a.id === e.target.value);
+                                        if(ag) setTempVoiceSettings(ag.voiceSettings);
+                                    }} 
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm outline-none"
+                                >
+                                    <option value="">Seleccionar Agente...</option>
+                                    {agents.map(a => <option key={a.id} value={a.id}>{a.name} ({a.category})</option>)}
+                                </select>
+                            </div>
+
+                            {tempVoiceSettings && (
+                                <div className="space-y-6 animate-in fade-in">
+                                    <div className="p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
+                                        <div className="flex justify-between mb-2">
+                                            <label className="text-[10px] uppercase font-bold text-white">Preset Argentino</label>
+                                            <span className="text-[10px] text-indigo-300">{ARGENTINE_PRESETS.find(p => p.id === tempVoiceSettings.argentinaPreset)?.name || 'Custom'}</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {ARGENTINE_PRESETS.map(p => (
+                                                <button 
+                                                    key={p.id}
+                                                    onClick={() => setTempVoiceSettings({...tempVoiceSettings, argentinaPreset: p.id})}
+                                                    className={`px-2 py-2 rounded-lg text-[10px] font-bold uppercase border transition-all ${tempVoiceSettings.argentinaPreset === p.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-black/30 border-white/10 text-slate-500 hover:border-white/30'}`}
+                                                >
+                                                    {p.name.split(' ')[0]} {p.name.split(' ')[1]}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div className="flex justify-between mb-2">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">Velocidad</label>
+                                            <span className="text-[10px] font-mono text-indigo-400">{tempVoiceSettings.speed.toFixed(1)}x</span>
+                                        </div>
+                                        <input 
+                                            type="range" min="0.5" max="2.0" step="0.1" 
+                                            value={tempVoiceSettings.speed}
+                                            onChange={(e) => setTempVoiceSettings({...tempVoiceSettings, speed: parseFloat(e.target.value)})}
+                                            className="w-full accent-indigo-500 bg-white/10 h-1 rounded-full appearance-none cursor-pointer"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <div className="flex justify-between mb-2">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">Pitch (Tono)</label>
+                                            <span className="text-[10px] font-mono text-indigo-400">{tempVoiceSettings.pitch}</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {['Grave', 'Medio', 'Agudo'].map((tone: any) => (
+                                                <button 
+                                                    key={tone}
+                                                    onClick={() => setTempVoiceSettings({...tempVoiceSettings, pitch: tone})}
+                                                    className={`flex-1 py-2 rounded-lg text-[10px] uppercase font-bold border transition-all ${tempVoiceSettings.pitch === tone ? 'bg-white text-black border-white' : 'bg-black/20 border-white/10 hover:border-white/30'}`}
+                                                >
+                                                    {tone}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        onClick={() => {
+                                            // Save Logic (Update real agent)
+                                            if(!testLabAgentId) return;
+                                            const updatedAgents = agents.map(a => a.id === testLabAgentId ? { ...a, voiceSettings: tempVoiceSettings! } : a);
+                                            setAgents(updatedAgents);
+                                            addNotification("Configuración de voz guardada", "success");
+                                        }}
+                                        className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-bold uppercase transition-all"
+                                    >
+                                        💾 Guardar en Agente
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Visualization & Test Area */}
+                        <div className="w-2/3 flex flex-col gap-6">
+                            <div className="flex-1 gaussian-glass rounded-[2rem] p-8 border border-white/5 relative overflow-hidden flex items-center justify-center bg-black/40">
+                                {/* Fake Spectrogram */}
+                                <div className="absolute inset-0 flex items-end justify-center gap-1 opacity-20 pointer-events-none pb-10 px-10">
+                                    {Array.from({length: 40}).map((_, i) => (
+                                        <div key={i} className="w-3 bg-indigo-500 rounded-t-sm animate-pulse" style={{ height: `${Math.random() * 80}%`, animationDuration: `${0.5 + Math.random()}s` }}></div>
+                                    ))}
+                                </div>
+                                <div className="z-10 text-center">
+                                    <div className="text-6xl mb-4">{isTestThinking ? '🔊' : '🎙️'}</div>
+                                    <h3 className="text-2xl font-black italic text-white mb-2">{isTestThinking ? 'GENERANDO AUDIO...' : 'LISTO PARA PRUEBA'}</h3>
+                                    <p className="text-slate-400 text-sm">Google Cloud Neural2-AR Engine Ready</p>
+                                </div>
+                            </div>
+
+                            <div className="h-32 gaussian-glass rounded-2xl p-4 flex gap-4 items-center border border-white/5">
+                                <textarea 
+                                    value={testInput}
+                                    onChange={(e) => setTestInput(e.target.value)}
+                                    className="flex-1 h-full bg-transparent resize-none outline-none text-sm p-2 placeholder:text-slate-600"
+                                    placeholder="Escribe algo para probar la voz..."
+                                />
+                                <button 
+                                    onClick={handleTestLabPreview}
+                                    disabled={isTestThinking || !testLabAgentId}
+                                    className="h-full px-8 rounded-xl btn-luxury font-black uppercase tracking-widest text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale animate-float-subtle"
+                                >
+                                    {isTestThinking ? '...' : '▶ PROBAR'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* --- ALADINO VIEW (OMNI-MODEL CHAT) --- */}
             {activeView === 'aladino' && (
                 <div className="w-full max-w-5xl h-[85vh] flex flex-col stagger-enter">
@@ -791,7 +1061,17 @@ const App: React.FC = () => {
                                 Tu Genio de Ingeniería Prompt & Análisis Multimodal.
                             </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
+                             {/* AGENT SELECTOR */}
+                             <select
+                                 value={aladinoActiveAgentId}
+                                 onChange={(e) => setAladinoActiveAgentId(e.target.value)}
+                                 className="bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-[10px] uppercase font-bold text-indigo-300 outline-none focus:border-indigo-500 cursor-pointer hover:bg-black/60 transition-colors"
+                             >
+                                 <option value="">🔮 Aladino (Standard)</option>
+                                 {agents.map(a => <option key={a.id} value={a.id}>🤖 {a.name} ({a.category})</option>)}
+                             </select>
+
                              <span className="px-2 py-1 rounded border border-white/10 text-[10px] bg-black/40 uppercase">Gemini 3 Pro</span>
                              <span className="px-2 py-1 rounded border border-white/10 text-[10px] bg-black/40 uppercase">Thinking Mode</span>
                         </div>
@@ -858,7 +1138,9 @@ const App: React.FC = () => {
                                         <p className="text-sm font-bold uppercase tracking-widest text-slate-500">Esperando tus deseos...</p>
                                     </div>
                                 ) : (
-                                    aladinoMessages.map(msg => (
+                                    aladinoMessages.map(msg => {
+                                        const msgAgent = msg.agentId ? agents.find(a => a.id === msg.agentId) : null;
+                                        return (
                                         <div key={msg.id} className={`flex flex-col gap-2 max-w-[85%] ${msg.role === 'user' ? 'self-end items-end' : 'self-start items-start'}`}>
                                             <div className={`p-4 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white/10 text-slate-200 rounded-bl-none border border-white/5'}`}>
                                                 {msg.attachments && msg.attachments.length > 0 && (
@@ -876,9 +1158,16 @@ const App: React.FC = () => {
                                                 )}
                                                 {msg.text}
                                             </div>
-                                            <span className="text-[10px] text-slate-600 uppercase font-bold">{msg.role === 'user' ? 'Tú' : 'Aladino'}</span>
+                                            <div className="flex items-center gap-2">
+                                                {msgAgent && msg.role === 'model' && (
+                                                    <img src={msgAgent.avatar} className="w-4 h-4 rounded-full object-cover border border-white/20" />
+                                                )}
+                                                <span className="text-[10px] text-slate-600 uppercase font-bold">
+                                                    {msg.role === 'user' ? 'Tú' : msgAgent ? msgAgent.name : 'Aladino'}
+                                                </span>
+                                            </div>
                                         </div>
-                                    ))
+                                    )})
                                 )}
                                 {isAladinoProcessing && (
                                     <div className="self-start flex items-center gap-2 text-xs text-indigo-400 font-bold uppercase animate-pulse">
@@ -920,7 +1209,7 @@ const App: React.FC = () => {
                                         value={aladinoInput}
                                         onChange={e => setAladinoInput(e.target.value)}
                                         onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAladinoSubmit(); }}}
-                                        placeholder="Escribe tu prompt o describe el archivo adjunto..."
+                                        placeholder={aladinoActiveAgentId ? `Escribe tu consulta para ${agents.find(a => a.id === aladinoActiveAgentId)?.name}...` : "Escribe tu prompt o describe el archivo adjunto..."}
                                         className="flex-1 bg-transparent border-none outline-none text-sm resize-none max-h-32 py-3 placeholder:text-slate-600"
                                         rows={1}
                                     />
@@ -950,12 +1239,21 @@ const App: React.FC = () => {
 
             {/* --- DIALOGUES / DOBLAJE VIEW (UPDATED) --- */}
             {activeView === 'dialogues' && (
-                <div className="w-full max-w-6xl h-[85vh] flex flex-col stagger-enter">
-                    <h2 className="text-4xl font-black italic uppercase mb-6 flex items-center gap-4">
+                <div className="w-full max-w-6xl h-[85vh] flex flex-col stagger-enter relative z-20">
+                    {/* LUXURY STUDIO BACKGROUND - UPDATED FOR SHARPNESS */}
+                    <div className="fixed inset-0 z-0 pointer-events-none">
+                         <img 
+                            src="https://images.unsplash.com/photo-1622618258273-097c5c06517a?q=80&w=2070&auto=format&fit=crop" 
+                            className="w-full h-full object-cover opacity-60 scale-105 contrast-125 saturate-50 brightness-75" 
+                         />
+                         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+                    </div>
+
+                    <h2 className="text-4xl font-black italic uppercase mb-6 flex items-center gap-4 relative z-10">
                         <span className="text-indigo-500">Estudio de</span> Doblaje & Diálogo
                     </h2>
                     
-                    <div className="flex gap-8 h-full">
+                    <div className="flex gap-8 h-full relative z-10">
                         <div className="w-1/3 space-y-4">
                             <div className="gaussian-glass p-6 rounded-3xl border border-white/5">
                                 <h3 className="text-xs font-bold uppercase text-slate-500 mb-4">Configuración de Escena</h3>
@@ -984,126 +1282,152 @@ const App: React.FC = () => {
                                             className="w-full mt-1 h-32 bg-black/40 border border-white/10 rounded-xl p-3 text-sm outline-none resize-none"
                                         />
                                     </div>
-                                    <button onClick={generateScript} disabled={isGeneratingScript} className="w-full py-4 rounded-xl font-bold uppercase btn-luxury">
+                                    <button onClick={generateScript} disabled={isGeneratingScript} className="w-full py-4 rounded-xl font-bold uppercase btn-luxury animate-float-subtle">
                                         {isGeneratingScript ? 'Generando Guión...' : 'Generar Diálogo'}
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="w-2/3 gaussian-glass rounded-3xl p-8 border border-white/5 overflow-y-auto relative">
+                        <div className="w-2/3 gaussian-glass rounded-3xl p-8 border border-white/5 overflow-y-auto relative flex flex-col">
                              {generatedScript.length === 0 ? (
-                                 <div className="absolute inset-0 flex items-center justify-center text-slate-600 uppercase font-bold tracking-widest">
+                                 <div className="flex-1 flex items-center justify-center text-slate-600 uppercase font-bold tracking-widest">
                                      Esperando Guión...
                                  </div>
                              ) : (
-                                 <div className="space-y-6">
-                                     {generatedScript.map((line, idx) => (
-                                         <div key={idx} className={`flex gap-4 group ${line.agentId === dialogueAgentA ? 'flex-row' : 'flex-row-reverse'}`}>
-                                             <div className={`w-10 h-10 flex-shrink-0 rounded-full flex items-center justify-center font-bold ${line.agentId === dialogueAgentA ? 'bg-indigo-600' : 'bg-pink-600'}`}>
-                                                 {line.agentName[0]}
-                                             </div>
-                                             <div className={`flex flex-col gap-2 max-w-md ${line.agentId === dialogueAgentA ? 'items-start' : 'items-end'}`}>
-                                                 <div className="bg-white/5 p-4 rounded-2xl border border-white/5 w-full relative group-hover:border-white/20 transition-all">
-                                                     <div className="flex justify-between items-center mb-2">
-                                                         <span className="font-bold text-sm">{line.agentName}</span>
-                                                         <span className="text-[10px] uppercase bg-white/10 px-2 py-0.5 rounded text-slate-400">{line.emotion}</span>
+                                 <>
+                                     <div className="space-y-6 pb-20">
+                                         {generatedScript.map((line, idx) => (
+                                             <div key={idx} className={`flex gap-4 group ${line.agentId === dialogueAgentA ? 'flex-row' : 'flex-row-reverse'}`}>
+                                                 <div className={`w-10 h-10 flex-shrink-0 rounded-full flex items-center justify-center font-bold ${line.agentId === dialogueAgentA ? 'bg-indigo-600' : 'bg-pink-600'}`}>
+                                                     {line.agentName[0]}
+                                                 </div>
+                                                 <div className={`flex flex-col gap-2 max-w-md ${line.agentId === dialogueAgentA ? 'items-start' : 'items-end'}`}>
+                                                     <div className="bg-white/5 p-4 rounded-2xl border border-white/5 w-full relative group-hover:border-white/20 transition-all hover:bg-white/10">
+                                                         <div className="flex justify-between items-center mb-2">
+                                                             <div className="flex items-center gap-2">
+                                                                 <span className="font-bold text-sm">{line.agentName}</span>
+                                                                 {line.duration && <span className="text-[10px] text-green-400 font-mono border border-green-500/30 px-1 rounded bg-green-900/20">{line.duration.toFixed(2)}s</span>}
+                                                             </div>
+                                                             <span className="text-[10px] uppercase bg-white/10 px-2 py-0.5 rounded text-slate-400">{line.emotion}</span>
+                                                         </div>
+                                                         {editingLineId === line.id ? (
+                                                            <textarea 
+                                                                className="w-full bg-black/50 p-2 rounded text-sm outline-none border border-indigo-500"
+                                                                value={line.text}
+                                                                autoFocus
+                                                                onBlur={() => setEditingLineId(null)}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    setGeneratedScript(prev => prev.map(l => l.id === line.id ? {...l, text: val} : l));
+                                                                }}
+                                                            />
+                                                         ) : (
+                                                            <p className="text-sm leading-relaxed cursor-text" onDoubleClick={() => setEditingLineId(line.id)}>{line.text}</p>
+                                                         )}
                                                      </div>
-                                                     {editingLineId === line.id ? (
-                                                        <textarea 
-                                                            className="w-full bg-black/50 p-2 rounded text-sm outline-none border border-indigo-500"
-                                                            value={line.text}
-                                                            autoFocus
-                                                            onBlur={() => setEditingLineId(null)}
-                                                            onChange={(e) => {
-                                                                const val = e.target.value;
-                                                                setGeneratedScript(prev => prev.map(l => l.id === line.id ? {...l, text: val} : l));
-                                                            }}
-                                                        />
-                                                     ) : (
-                                                        <p className="text-sm leading-relaxed" onDoubleClick={() => setEditingLineId(line.id)}>{line.text}</p>
-                                                     )}
-                                                 </div>
-                                                 
-                                                 <div className="flex gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                                                     <button 
-                                                        onClick={() => generateLineAudio(line)} 
-                                                        disabled={line.isGenerating}
-                                                        className="p-2 rounded-full bg-indigo-600 text-white hover:scale-110 transition-transform"
-                                                        title="Generar/Reproducir Audio"
-                                                     >
-                                                        {line.isGenerating ? '⏳' : '▶️'}
-                                                     </button>
-                                                     <button 
-                                                        onClick={() => setEditingLineId(line.id)}
-                                                        className="p-2 rounded-full bg-white/10 hover:bg-white/20"
-                                                        title="Editar Texto"
-                                                     >
-                                                        ✏️
-                                                     </button>
-                                                     {line.audioUrl && (
+                                                     
+                                                     <div className="flex gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
                                                          <button 
-                                                            onClick={() => downloadAudio(line.audioUrl!, `dialogue_${line.id}.wav`)}
-                                                            className="p-2 rounded-full bg-green-600 hover:bg-green-500"
-                                                            title="Descargar Audio"
+                                                            onClick={() => generateLineAudio(line)} 
+                                                            disabled={line.isGenerating}
+                                                            className="px-3 py-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold uppercase hover:bg-indigo-500"
+                                                            title="Generar/Regenerar Audio"
                                                          >
-                                                            ⬇️
+                                                            {line.isGenerating ? '⏳' : line.audioUrl ? '🔄 Regenerar' : '▶️ Generar'}
                                                          </button>
-                                                     )}
+                                                         <button 
+                                                            onClick={() => swapLineAgent(line)}
+                                                            className="px-3 py-1 rounded-full bg-white/10 text-[10px] font-bold uppercase hover:bg-white/20"
+                                                            title="Cambiar personaje"
+                                                         >
+                                                            👥 Cambiar Voz
+                                                         </button>
+                                                         <button 
+                                                            onClick={() => setEditingLineId(line.id)}
+                                                            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20"
+                                                            title="Editar Texto"
+                                                         >
+                                                            ✏️
+                                                         </button>
+                                                         {line.audioUrl && (
+                                                             <button 
+                                                                onClick={() => downloadAudio(line.audioUrl!, `dialogue_${line.id}.wav`)}
+                                                                className="p-1.5 rounded-full bg-green-600 hover:bg-green-500"
+                                                                title="Descargar Audio"
+                                                             >
+                                                                ⬇️
+                                                             </button>
+                                                         )}
+                                                     </div>
                                                  </div>
                                              </div>
+                                         ))}
+                                     </div>
+                                     
+                                     {/* EXPORT BAR */}
+                                     <div className="sticky bottom-0 bg-black/80 backdrop-blur-xl p-4 border-t border-white/10 -mx-8 -mb-8 flex justify-between items-center">
+                                         <div className="text-xs text-slate-400">
+                                             <span className="font-bold text-white">{generatedScript.filter(l => l.audioUrl).length}/{generatedScript.length}</span> Audios listos
                                          </div>
-                                     ))}
-                                 </div>
+                                         <button 
+                                            onClick={exportConversation}
+                                            className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl font-black uppercase text-xs tracking-widest hover:scale-105 transition-transform shadow-lg"
+                                         >
+                                             Exportar Mix Completo
+                                         </button>
+                                     </div>
+                                 </>
                              )}
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* --- TEMPLATES VIEW (APPLE STYLE - RECTANGULAR) --- */}
+            {/* --- TEMPLATES VIEW (UPDATED GRID + HOVER FX) --- */}
             {activeView === 'templates' && (
-                <div className="w-full max-w-6xl h-[85vh] overflow-y-auto no-scrollbar pb-20 stagger-enter">
-                     <div className="flex justify-between items-center mb-8 sticky top-0 bg-black/80 backdrop-blur-xl p-4 z-20 rounded-2xl border-b border-white/10">
+                <div className="w-full max-w-7xl h-[85vh] overflow-y-auto no-scrollbar pb-20 stagger-enter">
+                     <div className="flex justify-between items-center mb-8 sticky top-0 bg-black/80 backdrop-blur-xl p-6 z-20 rounded-2xl border-b border-white/10">
                         <div>
                             <h2 className="text-3xl font-black uppercase tracking-widest">Galería de Agentes ({agents.length})</h2>
                             <p className="text-sm text-slate-500 mt-1">Selecciona para editar. Archivos de Github precargados.</p>
                         </div>
-                        <button onClick={() => { createNewTemplate(); setActiveView('studio'); }} className="px-8 py-3 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-indigo-500/20 btn-luxury">
+                        <button onClick={() => { createNewTemplate(); setActiveView('studio'); }} className="px-8 py-3 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-indigo-500/20 btn-luxury animate-float-subtle">
                             + Nuevo Agente
                         </button>
                      </div>
                      
-                     <div className="flex flex-col gap-4">
+                     {/* HUGE GRID LAYOUT */}
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-2">
                         {agents.map((agent, i) => (
-                            <div key={agent.id} onClick={() => { setEditingAgent(agent); setActiveView('studio'); }} className="group relative gaussian-glass rounded-2xl p-4 border border-white/5 hover:border-indigo-500/50 transition-all cursor-pointer flex items-center gap-6 hover:bg-white/5 overflow-hidden">
-                                {/* Image Left */}
-                                <div className="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0 relative">
-                                    <img src={agent.avatar} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                                    {agent.isPro && <div className="absolute top-0 right-0 px-1.5 py-0.5 bg-amber-500 text-black text-[8px] font-black uppercase">PRO</div>}
+                            <div key={agent.id} onClick={() => { setEditingAgent(agent); setActiveView('studio'); }} className="group relative gaussian-glass rounded-[2rem] p-6 border border-white/5 hover:border-indigo-500/50 transition-all cursor-pointer flex flex-col gap-6 hover:bg-white/5 overflow-hidden hover-spring hover:shadow-[0_0_40px_rgba(99,102,241,0.2)]">
+                                
+                                {/* Background Blur Effect on Hover */}
+                                <div className="absolute inset-0 bg-indigo-900/20 opacity-0 group-hover:opacity-100 blur-3xl transition-opacity duration-700 pointer-events-none"></div>
+
+                                {/* Top Image */}
+                                <div className="w-full h-48 rounded-2xl overflow-hidden relative shadow-lg">
+                                    <img src={agent.avatar} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                                    {agent.isPro && <div className="absolute top-2 right-2 px-2 py-1 bg-amber-500 text-black text-[10px] font-black uppercase rounded shadow-lg">PRO</div>}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60"></div>
                                 </div>
                                 
-                                {/* Info Middle */}
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-1">
-                                        <h3 className="text-xl font-bold text-white">{agent.name}</h3>
-                                        <span className="px-2 py-0.5 rounded-full border border-white/10 text-[10px] uppercase text-slate-400 bg-black/20">{agent.category}</span>
+                                {/* Info */}
+                                <div className="flex-1 relative z-10">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <h3 className="text-2xl font-black text-white italic tracking-tight">{agent.name}</h3>
                                     </div>
-                                    <p className="text-indigo-400 text-xs uppercase tracking-widest font-bold mb-1">{agent.occupation}</p>
-                                    <p className="text-sm text-slate-400 line-clamp-1">{agent.description}</p>
+                                    <p className="text-indigo-400 text-xs uppercase tracking-widest font-bold mb-2">{agent.occupation}</p>
+                                    <p className="text-sm text-slate-400 line-clamp-2 leading-relaxed">{agent.description}</p>
                                 </div>
 
-                                {/* Meta Right */}
-                                <div className="flex flex-col items-end gap-2 text-right border-l border-white/5 pl-6">
-                                    <div className="text-[10px] uppercase text-slate-500">Voz</div>
-                                    <div className="font-mono text-xs text-indigo-300">{agent.voice}</div>
-                                    <div className="text-[10px] uppercase text-slate-500 mt-1">Conocimiento</div>
-                                    <div className={`w-2 h-2 rounded-full ${agent.instruction.includes('ACTIVE') ? 'bg-green-500' : 'bg-slate-700'}`}></div>
-                                </div>
-                                
-                                {/* Hover Effect */}
-                                <div className="absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span className="text-2xl text-indigo-500">→</span>
+                                {/* Footer */}
+                                <div className="flex justify-between items-center border-t border-white/5 pt-4 relative z-10">
+                                    <div className="text-[10px] uppercase text-slate-500 flex items-center gap-1">
+                                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                        {agent.voice}
+                                    </div>
+                                    <span className="text-xs font-bold text-white group-hover:text-indigo-400 transition-colors">EDITAR →</span>
                                 </div>
                             </div>
                         ))}
@@ -1111,50 +1435,17 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* --- TEST LAB --- */}
-            {activeView === 'test_lab' && (
-                <div className="w-full max-w-4xl h-[80vh] flex flex-col items-center justify-center stagger-enter">
-                    <div className="w-full gaussian-glass rounded-[3rem] p-10 border border-white/10 relative overflow-hidden">
-                        <div className="flex items-center gap-6 mb-8">
-                            <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-indigo-500 shadow-[0_0_30px_rgba(99,102,241,0.3)]">
-                                <img src={editingAgent?.avatar || currentAgent.avatar} className="w-full h-full object-cover" />
-                            </div>
-                            <div>
-                                <h2 className="text-3xl font-black uppercase italic">{editingAgent?.name || currentAgent.name}</h2>
-                                <p className="text-indigo-400 text-sm uppercase tracking-widest">Modo Prueba de Voz</p>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            <textarea 
-                                value={testInput}
-                                onChange={(e) => setTestInput(e.target.value)}
-                                placeholder="Escribe algo para que el agente lo diga con su acento y personalidad..."
-                                className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-6 text-lg outline-none focus:border-indigo-500 resize-none transition-all placeholder:text-slate-600"
-                            />
-                            
-                            <div className="flex justify-between items-center">
-                                <button 
-                                    onClick={testAgentVoice}
-                                    disabled={isTestThinking}
-                                    className={`px-8 py-3 rounded-full font-bold uppercase tracking-widest transition-all ${isTestThinking ? 'bg-slate-700 cursor-wait' : 'bg-white text-black hover:scale-105'}`}
-                                >
-                                    {isTestThinking ? 'Generando...' : '🔊 Escuchar Preview'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* --- STUDIO VIEW (REDESIGNED) --- */}
+            {/* --- STUDIO VIEW (BANNER ANIMATION) --- */}
             {activeView === 'studio' && (
                 <div className="w-full max-w-6xl h-[85vh] flex flex-col gap-6 stagger-enter">
                      {/* 1. HERO CARD (APPLE STYLE) */}
                      <div className="w-full h-64 rounded-[2.5rem] relative overflow-hidden group border border-white/5 shadow-2xl">
+                         {/* Dynamic Background Light FX */}
+                         <div className="absolute top-0 -left-[50%] w-[200%] h-full bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent animate-[shine_8s_linear_infinite] pointer-events-none"></div>
+
                          {/* Blurred Background */}
                          <div className="absolute inset-0">
-                            <img src={editingAgent?.avatar || currentAgent.avatar} className="w-full h-full object-cover opacity-30 blur-xl scale-110" />
+                            <img src={editingAgent?.avatar || currentAgent.avatar} className="w-full h-full object-cover opacity-30 blur-2xl scale-110" />
                             <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent"></div>
                          </div>
                          
@@ -1179,12 +1470,14 @@ const App: React.FC = () => {
                                      </span>
                                      {editingAgent?.isPro && <span className="text-amber-500 text-xs">★ PRO</span>}
                                  </div>
-                                 <h2 className="text-5xl font-black italic tracking-tighter mb-2">{editingAgent?.name || currentAgent.name}</h2>
+                                 <h2 className="text-5xl font-black italic tracking-tighter mb-2">
+                                     <Typewriter text={editingAgent?.name || currentAgent.name} speed={50} />
+                                 </h2>
                                  <p className="text-xl text-slate-300 font-light">{editingAgent?.occupation || currentAgent.occupation}</p>
                              </div>
 
                              <div className="flex flex-col gap-3">
-                                 <button onClick={saveTemplate} className="px-8 py-4 rounded-2xl font-black uppercase tracking-widest shadow-[0_0_30px_rgba(255,255,255,0.3)] btn-luxury">
+                                 <button onClick={saveTemplate} className="px-8 py-4 rounded-2xl font-black uppercase tracking-widest shadow-[0_0_30px_rgba(255,255,255,0.3)] btn-luxury animate-float-subtle">
                                      Guardar Cambios
                                  </button>
                                  <button onClick={() => setActiveView('templates')} className="px-8 py-2 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-colors">

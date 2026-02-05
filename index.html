@@ -34,7 +34,8 @@
             height: 110%;
             object-fit: cover;
             z-index: -3;
-            filter: brightness(0.25) saturate(1.4) contrast(1.1);
+            /* Added blur(20px) for Gaussian effect */
+            filter: brightness(0.25) saturate(1.4) contrast(1.1) blur(20px);
             transform: translate(calc(var(--mouse-x) * -0.02), calc(var(--mouse-y) * -0.02));
             transition: transform 0.1s ease-out;
         }
@@ -114,8 +115,9 @@
             opacity: 1;
         }
         .btn-luxury:hover {
-            transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.1);
+            /* Increased scale and lift for more dynamic feel */
+            transform: translateY(-4px) scale(1.05);
+            box-shadow: 0 15px 40px rgba(99, 102, 241, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.2);
             letter-spacing: 0.2em;
         }
         .btn-luxury::after {

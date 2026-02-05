@@ -89,6 +89,7 @@ export interface DialogueLine {
   text: string;
   emotion: string;
   audioUrl?: string; // URL del Blob generado
+  duration?: number; // Duración en segundos
   isGenerating?: boolean;
 }
 
@@ -124,6 +125,7 @@ export interface AladinoMessage {
   text: string;
   attachments?: AladinoAttachment[];
   timestamp: number;
+  agentId?: string; // Nuevo: ID del agente que generó la respuesta (si aplica)
 }
 
 export interface ElevenLabsVoice {
